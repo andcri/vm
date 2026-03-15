@@ -45,6 +45,21 @@ fn eval(subject: Noun, formula: Noun) -> Noun {
                 Noun::Cell(a, b) => eval(Noun::Cell(Box::new(eval(subject.clone(), *a)), Box::new(subject.clone())), *b),
                 _ => panic!("Unkown"),
             }
+            Noun::Atom(9) => match *y {
+                Noun::Cell(a, b) => {
+                    let core = eval(subject.clone(), *b);
+                    eval(core.clone(), tree_get(core.clone(), number_get(*a)))
+                }
+                _ => panic!("Unkown"),
+            }
+            Noun::Atom(10) => match *y {
+                Noun::Cell(a, b) => {
+                    let noun = eval(subject.clone(), *b);
+                    let replacement = eval(subject.clone(), right_get(*a.clone()));
+                    tree_set(noun, number_get(left_get(*a.clone())) , replacement)
+                }
+                _ => panic!("Unkown"),
+            }
             _ => panic!("Unkown"),
         },
         _ => panic!("Unkown"),
@@ -65,20 +80,35 @@ fn right_get(cell: Noun) -> Noun {
     }
 }
 
+fn number_get(cell: Noun) -> u64 {
+    match cell {
+        Noun::Atom(x) => x,
+        _ => panic!("Unkown"),
+    }
+}
+
 fn tree_get(noun: Noun, address: u64) -> Noun {
     match address {
         1 => noun,
         _val if address%2 == 0 => {
-          match noun {
-              Noun::Cell(x, _y) => tree_get(*x, address / 2),
-              _ => panic!("Unkown"),
+            left_get(tree_get(noun, address / 2))
           }
+        _ => {
+            right_get(tree_get(noun, address / 2))
+          }
+    }
+}
+
+fn tree_set(noun: Noun, axis: u64, replacement: Noun) -> Noun {
+    match axis {
+        1 => replacement,
+        _val if axis%2 == 0 => {
+            let sibling = tree_get(noun.clone(), axis + 1);
+            tree_set(noun.clone(), axis/2, Noun::Cell(Box::new(replacement), Box::new(sibling)))
         }
         _ => {
-          match noun {
-              Noun::Cell(_x, y) => tree_get(*y, address / 2),
-              _ => panic!("Unkown"),
-          }
+            let sibling = tree_get(noun.clone(), axis - 1);
+            tree_set(noun.clone(), axis/2, Noun::Cell(Box::new(sibling), Box::new(replacement)))
         }
     }
 }
@@ -117,6 +147,10 @@ fn main() {
   // opcode 7 tests: compose
   // eval(42, [7 [1 10] [4 [0 1]]]) → 11 (eval [1 10] → 10, then eval(10, [4 [0 1]]) → 11)
   println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Box::new(Noun::Atom(7)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(1)), Box::new(Noun::Atom(10)))), Box::new(Noun::Cell(Box::new(Noun::Atom(4)), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))))))))));
+
+  // deep tree_get test
+  // eval([10 [20 30]], [0 6]) → should be 20
+  println!("deep: {:?}", eval(Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Cell(Box::new(Noun::Atom(20)), Box::new(Noun::Atom(30))))), Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(6)))));
 
   // opcode 8 tests: push
   // eval(42, [8 [1 10] [0 2]]) → 10 (push 10 onto subject → [10 42], then [0 2] → 10)
