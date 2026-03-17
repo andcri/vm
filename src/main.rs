@@ -24,7 +24,11 @@ fn eval_step(subject: Noun, formula: Noun) -> Outcome {
             }
             Noun::Atom(1) => Outcome::Done(*y),
             Noun::Atom(2) => match *y {
-                Noun::Cell(x, y) => Outcome::Done((eval(eval(subject.clone(), *x), eval(subject.clone(), *y)))),
+                Noun::Cell(x, y) => {
+                    let new_subject = eval(subject.clone(), *x);
+                    let new_formula = eval(subject.clone(), *y);
+                    Outcome::Continue(new_subject, new_formula)
+                },
                 _ => panic!("Unkown"),
             },
             Noun::Atom(3) => match eval(subject, *y) {
@@ -41,8 +45,8 @@ fn eval_step(subject: Noun, formula: Noun) -> Outcome {
             }
             Noun::Atom(6) => match *y {
                 Noun::Cell(x, y) => match eval(subject.clone(), *x) == Noun::Atom(0) {
-                    true => Outcome::Done(eval(subject.clone(), left_get(*y))),
-                    false => Outcome::Done(eval(subject.clone(), right_get(*y))),
+                    true => Outcome::Continue(subject.clone(), left_get(*y)),
+                    false => Outcome::Continue(subject.clone(), right_get(*y)),
                 }
                 _ => panic!("Unkown"),
             }
@@ -77,7 +81,7 @@ fn eval_step(subject: Noun, formula: Noun) -> Outcome {
                     Outcome::Continue(subject, Noun::Atom(a))
                 }
             }
-            _ => panic!("Missing"),
+            _ => panic!("Unkown"),
         },
         _ => panic!("Unkown"),
     }
@@ -90,7 +94,6 @@ fn eval(mut subject: Noun, mut formula: Noun) -> Noun {
             Outcome::Continue(x, y) => {
                 subject = x;
                 formula = y;
-                continue;
             }
         }
     }
@@ -143,6 +146,51 @@ fn tree_set(noun: Noun, axis: u64, replacement: Noun) -> Noun {
     }
 }
 
+fn serialize(noun: Noun) -> Vec<u8> {
+    match noun {
+        Noun::Atom(x) => {
+            let mut bytes = Vec::new();
+            bytes.push(0x00);
+            bytes.extend_from_slice(&x.to_le_bytes());
+            bytes
+
+        }
+        Noun::Cell(x, y) => {
+            let mut bytes = Vec::new();
+            bytes.push(0x01);
+            bytes.extend(serialize(*x));
+            bytes.extend(serialize(*y));
+            println!("{:?}", bytes);
+            bytes
+        }
+    }
+}
+
+fn deserialize(bytes: &[u8]) -> Noun {
+    let (noun, _) = deserialize_inner(bytes);
+    noun
+}
+
+fn deserialize_inner(bytes: &[u8]) -> (Noun, usize) {
+    match bytes {
+        [0x00, rest @ ..] => {
+            let number = u64::from_le_bytes(rest[..8].try_into().unwrap());
+            println!("{:?}", number);
+            (Noun::Atom(number), 9)
+        }
+        [0x01, rest @ ..] => {
+            // extract the cell or atom
+            let (left, left_bytes_used) = deserialize_inner(rest);
+            let (right, right_bytes_used) = deserialize_inner(&rest[left_bytes_used..]);
+            (Noun::Cell(Box::new(left), Box::new(right)), left_bytes_used + right_bytes_used + 1)
+
+        }
+        _ => panic!("empty"),
+
+    }
+
+}
+
 fn main() {
   // opcode 1 test
   println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Box::new(Noun::Atom(1)), Box::new(Noun::Atom(7)))));
@@ -190,5 +238,14 @@ fn main() {
 
   // Infinite loop test — this WILL crash with stack overflow
   // Program: [2 [0 1] [0 1]] — evaluates itself against itself forever
-  // println!("{:?}", eval(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(2)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))))))), Box::new(Noun::Atom(0))), Noun::Cell(Box::new(Noun::Atom(2)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))))))));
+    // println!("{:?}", eval(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(2)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))))))), Box::new(Noun::Atom(0))), Noun::Cell(Box::new(Noun::Atom(2)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))))))));
+  // serialize(Noun::Atom(1));
+
+  // serialize(Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Cell(Box::new(Noun::Atom(20)), Box::new(Noun::Atom(30))))));
+
+  // deserialize(&serialize(Noun::Atom(10)));
+
+  let noun = Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Cell(Box::new(Noun::Atom(20)), Box::new(Noun::Atom(30)))));
+
+    println!("{:?}", assert_eq!(deserialize(&serialize(noun.clone())), noun));
 }
