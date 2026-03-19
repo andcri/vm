@@ -1,9 +1,14 @@
+use std::fs;
+use std::rc::Rc;
+
 #[derive(Debug)]
 #[derive(Clone)]
 #[derive(PartialEq)]
+
+
 enum Noun {
     Atom(u64),
-    Cell(Box<crate::Noun>, Box<crate::Noun>),
+    Cell(Rc<Noun>, Rc<Noun>),
 }
 
 // Trampoling
@@ -18,64 +23,64 @@ enum Outcome {
 fn eval_step(subject: Noun, formula: Noun) -> Outcome {
     match formula {
         Noun::Cell(x, y) => match *x {
-            Noun::Atom(0) => match *y {
+            Noun::Atom(0) => match (*y).clone() {
                 Noun::Atom(x) =>  Outcome::Done(tree_get(subject, x)),
                 _ => panic!("Unkown"),
             }
-            Noun::Atom(1) => Outcome::Done(*y),
-            Noun::Atom(2) => match *y {
+            Noun::Atom(1) => Outcome::Done((*y).clone()),
+            Noun::Atom(2) => match (*y).clone() {
                 Noun::Cell(x, y) => {
-                    let new_subject = eval(subject.clone(), *x);
-                    let new_formula = eval(subject.clone(), *y);
+                    let new_subject = eval(subject.clone(), (*x).clone());
+                    let new_formula = eval(subject.clone(), (*y).clone());
                     Outcome::Continue(new_subject, new_formula)
                 },
                 _ => panic!("Unkown"),
             },
-            Noun::Atom(3) => match eval(subject, *y) {
+            Noun::Atom(3) => match eval(subject, (*y).clone()) {
                 Noun::Cell(_x, _y) => Outcome::Done(Noun::Atom(0)),
                 Noun::Atom(_x) => Outcome::Done(Noun::Atom(1)),
             },
-            Noun::Atom(4) => match eval(subject, *y) {
+            Noun::Atom(4) => match eval(subject, (*y).clone()) {
                 Noun::Atom(x) => Outcome::Done(Noun::Atom(x+1)),
                 _ => panic!("Unkown"),
             },
-            Noun::Atom(5) => match *y {
-                Noun::Cell(x, y) => if eval(subject.clone(), *x) == eval(subject.clone(), *y) { Outcome::Done(Noun::Atom(0)) } else { Outcome::Done(Noun::Atom(1)) }
+            Noun::Atom(5) => match (*y).clone() {
+                Noun::Cell(x, y) => if eval(subject.clone(), (*x).clone()) == eval(subject.clone(), (*y).clone()) { Outcome::Done(Noun::Atom(0)) } else { Outcome::Done(Noun::Atom(1)) }
                 _ => panic!("Unkown"),
             }
-            Noun::Atom(6) => match *y {
-                Noun::Cell(x, y) => match eval(subject.clone(), *x) == Noun::Atom(0) {
-                    true => Outcome::Continue(subject.clone(), left_get(*y)),
-                    false => Outcome::Continue(subject.clone(), right_get(*y)),
+            Noun::Atom(6) => match (*y).clone() {
+                Noun::Cell(x, y) => match eval(subject.clone(), (*x).clone()) == Noun::Atom(0) {
+                    true => Outcome::Continue(subject.clone(), left_get((*y).clone())),
+                    false => Outcome::Continue(subject.clone(), right_get((*y).clone())),
                 }
                 _ => panic!("Unkown"),
             }
-            Noun::Atom(7) => match *y {
-                Noun::Cell(a, b) => Outcome::Continue(eval(subject.clone(), *a), *b),
+            Noun::Atom(7) => match (*y).clone() {
+                Noun::Cell(a, b) => Outcome::Continue(eval(subject.clone(), (*a).clone()), (*b).clone()),
                 _ => panic!("Unkown"),
             }
-            Noun::Atom(8) => match *y {
-                Noun::Cell(a, b) => Outcome::Continue(Noun::Cell(Box::new(eval(subject.clone(), *a)), Box::new(subject.clone())), *b),
+            Noun::Atom(8) => match (*y).clone() {
+                Noun::Cell(a, b) => Outcome::Continue(Noun::Cell(Rc::new(eval(subject.clone(), (*a).clone())), Rc::new(subject.clone())), (*b).clone()),
                 _ => panic!("Unkown"),
             }
-            Noun::Atom(9) => match *y {
+            Noun::Atom(9) => match (*y).clone() {
                 Noun::Cell(a, b) => {
-                    let core = eval(subject.clone(), *b);
-                    Outcome::Continue(core.clone(), tree_get(core.clone(), number_get(*a)))
+                    let core = eval(subject.clone(), (*b).clone());
+                    Outcome::Continue(core.clone(), tree_get(core.clone(), number_get((*b).clone())))
                 }
                 _ => panic!("Unkown"),
             }
-            Noun::Atom(10) => match *y {
+            Noun::Atom(10) => match (*y).clone() {
                 Noun::Cell(a, b) => {
-                    let noun = eval(subject.clone(), *b);
-                    let replacement = eval(subject.clone(), right_get(*a.clone()));
-                    Outcome::Done(tree_set(noun, number_get(left_get(*a.clone())) , replacement))
+                    let noun = eval(subject.clone(), (*b).clone());
+                    let replacement = eval(subject.clone(), right_get((*a).clone()));
+                    Outcome::Done(tree_set(noun, number_get(left_get((*a).clone())) , replacement))
                 }
                 _ => panic!("Unkown"),
             }
-            Noun::Atom(11) => match *y {
+            Noun::Atom(11) => match (*y).clone() {
                 Noun::Cell(a, b) => {
-                    Outcome::Continue(subject, *b)
+                    Outcome::Continue(subject, (*b).clone())
                 }
                 Noun::Atom(a) => {
                     Outcome::Continue(subject, Noun::Atom(a))
@@ -101,14 +106,14 @@ fn eval(mut subject: Noun, mut formula: Noun) -> Noun {
 
 fn left_get(cell: Noun) -> Noun {
     match cell {
-        Noun::Cell(x, _y) => *x,
+        Noun::Cell(x, _y) => (*x).clone(),
         _ => panic!("Unkown"),
     }
 }
 
 fn right_get(cell: Noun) -> Noun {
     match cell {
-        Noun::Cell(_x, y) => *y,
+        Noun::Cell(_x, y) => (*y).clone(),
         _ => panic!("Unkown"),
     }
 }
@@ -137,11 +142,11 @@ fn tree_set(noun: Noun, axis: u64, replacement: Noun) -> Noun {
         1 => replacement,
         _val if axis%2 == 0 => {
             let sibling = tree_get(noun.clone(), axis + 1);
-            tree_set(noun.clone(), axis/2, Noun::Cell(Box::new(replacement), Box::new(sibling)))
+            tree_set(noun.clone(), axis/2, Noun::Cell(Rc::new(replacement), Rc::new(sibling)))
         }
         _ => {
             let sibling = tree_get(noun.clone(), axis - 1);
-            tree_set(noun.clone(), axis/2, Noun::Cell(Box::new(sibling), Box::new(replacement)))
+            tree_set(noun.clone(), axis/2, Noun::Cell(Rc::new(sibling), Rc::new(replacement)))
         }
     }
 }
@@ -158,9 +163,8 @@ fn serialize(noun: Noun) -> Vec<u8> {
         Noun::Cell(x, y) => {
             let mut bytes = Vec::new();
             bytes.push(0x01);
-            bytes.extend(serialize(*x));
-            bytes.extend(serialize(*y));
-            println!("{:?}", bytes);
+            bytes.extend(serialize((*x).clone()));
+            bytes.extend(serialize((*y).clone()));
             bytes
         }
     }
@@ -175,14 +179,12 @@ fn deserialize_inner(bytes: &[u8]) -> (Noun, usize) {
     match bytes {
         [0x00, rest @ ..] => {
             let number = u64::from_le_bytes(rest[..8].try_into().unwrap());
-            println!("{:?}", number);
             (Noun::Atom(number), 9)
         }
         [0x01, rest @ ..] => {
-            // extract the cell or atom
             let (left, left_bytes_used) = deserialize_inner(rest);
             let (right, right_bytes_used) = deserialize_inner(&rest[left_bytes_used..]);
-            (Noun::Cell(Box::new(left), Box::new(right)), left_bytes_used + right_bytes_used + 1)
+            (Noun::Cell(Rc::new(left), Rc::new(right)), left_bytes_used + right_bytes_used + 1)
 
         }
         _ => panic!("empty"),
@@ -191,61 +193,72 @@ fn deserialize_inner(bytes: &[u8]) -> (Noun, usize) {
 
 }
 
-fn main() {
+fn main() -> std::io::Result<()> {
   // opcode 1 test
-  println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Box::new(Noun::Atom(1)), Box::new(Noun::Atom(7)))));
+  println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(7)))));
 
 //  // opcode 0 test
-  println!("{:?}", eval(Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Cell(Box::new(Noun::Atom(20)), Box::new(Noun::Atom(30))))), Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(3)))));
+  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(20)), Rc::new(Noun::Atom(30))))), Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))));
 
   // opcode 3 tests: is-cell?
   // eval_step([10 20], [3 [0 1]]) → 0 (result is [10 20], a cell)
-  println!("{:?}", eval(Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Atom(20))), Noun::Cell(Box::new(Noun::Atom(3)), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))))));
+  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(3)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(1)))))));
   // eval_step([10 20], [3 [0 2]]) → 1 (result is 10, an atom)
-  println!("{:?}", eval(Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Atom(20))), Noun::Cell(Box::new(Noun::Atom(3)), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(2)))))));
+  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(3)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))))));
 
   // opcode 4 tests: increment
   // eval_step([10 20], [4 [0 2]]) → 11 (eval_step [0 2] → 10, then 10+1)
-  println!("{:?}", eval(Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Atom(20))), Noun::Cell(Box::new(Noun::Atom(4)), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(2)))))));
+  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(4)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))))));
   // eval_step([10 20], [4 [0 3]]) → 21 (eval_step [0 3] → 20, then 20+1)
-  println!("{:?}", eval(Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Atom(20))), Noun::Cell(Box::new(Noun::Atom(4)), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(3)))))));
+  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(4)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))))));
 
   // opcode 5 tests: equals
   // eval([10 10], [5 [0 2] [0 3]]) → 0 (10 == 10)
-  println!("{:?}", eval(Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Atom(10))), Noun::Cell(Box::new(Noun::Atom(5)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(2)))), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(3)))))))));
+  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(10))), Noun::Cell(Rc::new(Noun::Atom(5)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))))))));
   // eval([10 20], [5 [0 2] [0 3]]) → 1 (10 != 20)
-  println!("{:?}", eval(Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Atom(20))), Noun::Cell(Box::new(Noun::Atom(5)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(2)))), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(3)))))))));
+  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(5)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))))))));
 
   // opcode 6 tests: if-then-else
   // eval([10 20], [6 [1 0] [0 2] [0 3]]) → 10 (test=0 → true → eval [0 2] → 10)
-  println!("{:?}", eval(Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Atom(20))), Noun::Cell(Box::new(Noun::Atom(6)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(1)), Box::new(Noun::Atom(0)))), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(2)))), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(3)))))))))));
+  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(6)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(0)))), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))))))))));
   // eval([10 20], [6 [1 1] [0 2] [0 3]]) → 20 (test=1 → false → eval [0 3] → 20)
-  println!("{:?}", eval(Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Atom(20))), Noun::Cell(Box::new(Noun::Atom(6)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(1)), Box::new(Noun::Atom(1)))), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(2)))), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(3)))))))))));
+  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(6)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(1)))), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))))))))));
 
   // opcode 7 tests: compose
   // eval(42, [7 [1 10] [4 [0 1]]]) → 11 (eval [1 10] → 10, then eval(10, [4 [0 1]]) → 11)
-  println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Box::new(Noun::Atom(7)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(1)), Box::new(Noun::Atom(10)))), Box::new(Noun::Cell(Box::new(Noun::Atom(4)), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))))))))));
+  println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Rc::new(Noun::Atom(7)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(10)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(4)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(1)))))))))));
 
   // deep tree_get test
   // eval([10 [20 30]], [0 6]) → should be 20
-  println!("deep: {:?}", eval(Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Cell(Box::new(Noun::Atom(20)), Box::new(Noun::Atom(30))))), Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(6)))));
+  println!("deep: {:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(20)), Rc::new(Noun::Atom(30))))), Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(6)))));
 
   // opcode 8 tests: push
   // eval(42, [8 [1 10] [0 2]]) → 10 (push 10 onto subject → [10 42], then [0 2] → 10)
-  println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Box::new(Noun::Atom(8)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(1)), Box::new(Noun::Atom(10)))), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(2)))))))));
+  println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Rc::new(Noun::Atom(8)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(10)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))))))));
   // eval(42, [8 [1 10] [0 3]]) → 42 (push 10 onto subject → [10 42], then [0 3] → 42)
-  println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Box::new(Noun::Atom(8)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(1)), Box::new(Noun::Atom(10)))), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(3)))))))));
+  println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Rc::new(Noun::Atom(8)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(10)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))))))));
 
   // Infinite loop test — this WILL crash with stack overflow
   // Program: [2 [0 1] [0 1]] — evaluates itself against itself forever
-    // println!("{:?}", eval(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(2)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))))))), Box::new(Noun::Atom(0))), Noun::Cell(Box::new(Noun::Atom(2)), Box::new(Noun::Cell(Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))), Box::new(Noun::Cell(Box::new(Noun::Atom(0)), Box::new(Noun::Atom(1)))))))));
+    // println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(2)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(1)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(1)))))))), Rc::new(Noun::Atom(0))), Noun::Cell(Rc::new(Noun::Atom(2)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(1)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(1)))))))));
   // serialize(Noun::Atom(1));
 
-  // serialize(Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Cell(Box::new(Noun::Atom(20)), Box::new(Noun::Atom(30))))));
+  // serialize(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(20)), Rc::new(Noun::Atom(30))))));
 
   // deserialize(&serialize(Noun::Atom(10)));
 
-  let noun = Noun::Cell(Box::new(Noun::Atom(10)), Box::new(Noun::Cell(Box::new(Noun::Atom(20)), Box::new(Noun::Atom(30)))));
+  let noun = Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(20)), Rc::new(Noun::Atom(30)))));
 
     println!("{:?}", assert_eq!(deserialize(&serialize(noun.clone())), noun));
+
+    // save to disk a Noun and then read it
+
+    match fs::write("test.noun", serialize(noun.clone()))? {
+        () => {
+            let data: Vec<u8> = fs::read("test.noun")?;
+            println!("{:?}", deserialize(&data));
+            Ok(())
+        }
+        _ => panic!("File not written")
+    }
 }
