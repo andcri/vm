@@ -4,14 +4,14 @@ use helpers::right_get;
 use helpers::number_get;
 use helpers::tree_get;
 use helpers::tree_set;
+use helpers::test_op_codes;
 use std::fs;
 use std::rc::Rc;
+use std::io::{stdin,stdout,Write};
 
 #[derive(Debug)]
 #[derive(Clone)]
 #[derive(PartialEq)]
-
-
 pub enum Noun {
     Atom(u64),
     Cell(Rc<Noun>, Rc<Noun>),
@@ -25,6 +25,8 @@ enum Outcome {
     Done(Noun),
     Continue(Noun, Noun)
 }
+
+
 
 fn eval_step(subject: Noun, formula: Noun) -> Outcome {
     match formula {
@@ -98,7 +100,7 @@ fn eval_step(subject: Noun, formula: Noun) -> Outcome {
     }
 }
 
-fn eval(mut subject: Noun, mut formula: Noun) -> Noun {
+pub fn eval(mut subject: Noun, mut formula: Noun) -> Noun {
     loop {
         match eval_step(subject, formula) {
             Outcome::Done(x) => return x,
@@ -130,20 +132,39 @@ fn serialize(noun: Noun) -> Vec<u8> {
     }
 }
 
-fn deserialize(bytes: &[u8]) -> Noun {
-    let (noun, _) = deserialize_inner(bytes);
+fn deserialize(bytes: &[u8], arena: &mut Arena) -> Noun {
+    let (noun, _) = deserialize_inner(bytes, arena);
     noun
 }
 
-fn deserialize_inner(bytes: &[u8]) -> (Noun, usize) {
+// A Vec<u8> (your memory block)
+// An offset tracking where the next free slot is
+// A function that takes a Noun, writes it into the block at the current offset, advances the offset, and returns a reference
+struct Arena {
+    memory: Vec<u8>,
+    offset: usize,
+}
+
+impl Arena {
+    fn alloc(&mut self, noun: Noun) -> () {
+        //arena.memory.push(&noun as *const Noun as *const u8);
+        println!("arena: {:?}", &noun as *const Noun as *const u8);
+        // add the bytes to the vector starting at the offset
+        // update the offset
+        // return the Rc that points to that vector index range
+    }
+}
+
+fn deserialize_inner(bytes: &[u8], arena: &mut Arena) -> (Noun, usize) {
     match bytes {
         [0x00, rest @ ..] => {
             let number = u64::from_le_bytes(rest[..8].try_into().unwrap());
             (Noun::Atom(number), 9)
         }
         [0x01, rest @ ..] => {
-            let (left, left_bytes_used) = deserialize_inner(rest);
-            let (right, right_bytes_used) = deserialize_inner(&rest[left_bytes_used..]);
+            let (left, left_bytes_used) = deserialize_inner(rest, arena);
+            let (right, right_bytes_used) = deserialize_inner(&rest[left_bytes_used..], arena);
+            arena.alloc(left.clone());
             (Noun::Cell(Rc::new(left), Rc::new(right)), left_bytes_used + right_bytes_used + 1)
 
         }
@@ -153,72 +174,141 @@ fn deserialize_inner(bytes: &[u8]) -> (Noun, usize) {
 
 }
 
+fn parser(line: &[u8]) -> (Noun, usize) {
+    //read the line, match on start of cell [ and end of cell ]
+    match line {
+        [head @ b'0'..=b'9', rest @ ..] => {
+            let mut atom_value = std::slice::from_ref(head);
+            let mut combined = Vec::new();
+            let mut index = 0;
+            combined.extend_from_slice(atom_value);
+            for (i, digit) in rest.iter().enumerate() {
+                if digit.is_ascii_digit() {
+                    combined.extend_from_slice(std::slice::from_ref(digit));
+                } else {
+                    index = i;
+                    break;
+                }
+            }
+            let result = std::str::from_utf8(&combined).unwrap().parse::<u64>().unwrap();
+            (Noun::Atom(result), index+1)
+        }
+        [b'[', rest @ ..] => {
+            let (left, pos) = parser(rest);
+            let (next, next_pos) = parser(&rest[pos+1..]);
+            (Noun::Cell(Rc::new(left), Rc::new(next)), pos + next_pos + 1)
+        }
+        [b']', rest @ ..] => {
+            parser(rest)
+        }
+
+        [b' ', rest @ ..] => {
+            parser(rest)
+        }
+        _ => panic!("Invalid command")
+    }
+
+}
+
+fn pretty_print(noun: Noun) -> String {
+    match noun {
+        Noun::Atom(x) => {
+            x.to_string()
+        }
+        Noun::Cell(x, y) => {
+            "[".to_owned() + &pretty_print((*x).clone()) + " " + &pretty_print((*y).clone()) + "]"
+        }
+    }
+}
+
 fn main() -> std::io::Result<()> {
-  // opcode 1 test
-  println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(7)))));
+   //test_op_codes();
 
-//  // opcode 0 test
-  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(20)), Rc::new(Noun::Atom(30))))), Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))));
-
-  // opcode 3 tests: is-cell?
-  // eval_step([10 20], [3 [0 1]]) → 0 (result is [10 20], a cell)
-  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(3)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(1)))))));
-  // eval_step([10 20], [3 [0 2]]) → 1 (result is 10, an atom)
-  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(3)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))))));
-
-  // opcode 4 tests: increment
-  // eval_step([10 20], [4 [0 2]]) → 11 (eval_step [0 2] → 10, then 10+1)
-  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(4)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))))));
-  // eval_step([10 20], [4 [0 3]]) → 21 (eval_step [0 3] → 20, then 20+1)
-  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(4)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))))));
-
-  // opcode 5 tests: equals
-  // eval([10 10], [5 [0 2] [0 3]]) → 0 (10 == 10)
-  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(10))), Noun::Cell(Rc::new(Noun::Atom(5)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))))))));
-  // eval([10 20], [5 [0 2] [0 3]]) → 1 (10 != 20)
-  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(5)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))))))));
-
-  // opcode 6 tests: if-then-else
-  // eval([10 20], [6 [1 0] [0 2] [0 3]]) → 10 (test=0 → true → eval [0 2] → 10)
-  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(6)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(0)))), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))))))))));
-  // eval([10 20], [6 [1 1] [0 2] [0 3]]) → 20 (test=1 → false → eval [0 3] → 20)
-  println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))), Noun::Cell(Rc::new(Noun::Atom(6)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(1)))), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))))))))));
-
-  // opcode 7 tests: compose
-  // eval(42, [7 [1 10] [4 [0 1]]]) → 11 (eval [1 10] → 10, then eval(10, [4 [0 1]]) → 11)
-  println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Rc::new(Noun::Atom(7)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(10)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(4)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(1)))))))))));
-
-  // deep tree_get test
-  // eval([10 [20 30]], [0 6]) → should be 20
-  println!("deep: {:?}", eval(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(20)), Rc::new(Noun::Atom(30))))), Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(6)))));
-
-  // opcode 8 tests: push
-  // eval(42, [8 [1 10] [0 2]]) → 10 (push 10 onto subject → [10 42], then [0 2] → 10)
-  println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Rc::new(Noun::Atom(8)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(10)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(2)))))))));
-  // eval(42, [8 [1 10] [0 3]]) → 42 (push 10 onto subject → [10 42], then [0 3] → 42)
-  println!("{:?}", eval(Noun::Atom(42), Noun::Cell(Rc::new(Noun::Atom(8)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(10)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(3)))))))));
-
-  // Infinite loop test — this WILL crash with stack overflow
-  // Program: [2 [0 1] [0 1]] — evaluates itself against itself forever
-    // println!("{:?}", eval(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(2)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(1)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(1)))))))), Rc::new(Noun::Atom(0))), Noun::Cell(Rc::new(Noun::Atom(2)), Rc::new(Noun::Cell(Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(1)))), Rc::new(Noun::Cell(Rc::new(Noun::Atom(0)), Rc::new(Noun::Atom(1)))))))));
-  // serialize(Noun::Atom(1));
-
-  // serialize(Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(20)), Rc::new(Noun::Atom(30))))));
-
-  // deserialize(&serialize(Noun::Atom(10)));
-
+  let mut arena = Arena {
+      memory: Vec::new(),
+      offset: 0
+  };
   let noun = Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Cell(Rc::new(Noun::Atom(20)), Rc::new(Noun::Atom(30)))));
 
-    println!("{:?}", assert_eq!(deserialize(&serialize(noun.clone())), noun));
+  println!("{:?}", assert_eq!(deserialize(&serialize(noun.clone()), &mut arena), noun));
 
-    // save to disk a Noun and then read it
+  match fs::write("test.noun", serialize(noun.clone()))? {
+      () => {
+          let data: Vec<u8> = fs::read("test.noun")?;
+          println!("{:?}", deserialize(&data, &mut arena));
+          Ok(())
+      }
+      _ => panic!("File not written")
+  }
+}
 
-    match fs::write("test.noun", serialize(noun.clone()))? {
-        () => {
-            let data: Vec<u8> = fs::read("test.noun")?;
-            println!("{:?}", deserialize(&data));
-            Ok(())
-        }
-        _ => panic!("File not written")
+//fn main() -> std::io::Result<()> {
+//    loop {
+//        print!("nock>");
+//        let mut s=String::new();
+//        let _=stdout().flush();
+//        stdin().read_line(&mut s).expect("Did not enter a correct string");
+//        let (noun, _) = parser(&s.as_bytes());
+//        println!("{}", pretty_print(noun.clone()));
+//        let left = left_get(noun.clone());
+//        let right = right_get(noun.clone());
+//        println!("{}", pretty_print(eval(left, right)));
+//    }
+//}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_single_atom() {
+        let (noun, _) = parser(b"42 ");
+        assert_eq!(noun, Noun::Atom(42));
+    }
+
+    #[test]
+    fn parse_multi_digit_atom() {
+        let (noun, _) = parser(b"123 ");
+        assert_eq!(noun, Noun::Atom(123));
+    }
+
+    #[test]
+    fn parse_simple_cell() {
+        let (noun, _) = parser(b"[1 2]");
+        assert_eq!(noun, Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(2))));
+    }
+
+    #[test]
+    fn parse_nested_cell_right() {
+        let (noun, _) = parser(b"[1 [2 3]]");
+        assert_eq!(noun, Noun::Cell(
+            Rc::new(Noun::Atom(1)),
+            Rc::new(Noun::Cell(Rc::new(Noun::Atom(2)), Rc::new(Noun::Atom(3))))
+        ));
+    }
+
+    #[test]
+    fn parse_nested_cell_left() {
+        let (noun, _) = parser(b"[[1 2] 3]");
+        assert_eq!(noun, Noun::Cell(
+            Rc::new(Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(2)))),
+            Rc::new(Noun::Atom(3))
+        ));
+    }
+
+    #[test]
+    fn parse_deeply_nested() {
+        let (noun, _) = parser(b"[[1 2] [3 4]]");
+        assert_eq!(noun, Noun::Cell(
+            Rc::new(Noun::Cell(Rc::new(Noun::Atom(1)), Rc::new(Noun::Atom(2)))),
+            Rc::new(Noun::Cell(Rc::new(Noun::Atom(3)), Rc::new(Noun::Atom(4))))
+        ));
+    }
+
+    #[test]
+    fn parse_multi_digit_in_cell() {
+        let (noun, _) = parser(b"[10 20]");
+        assert_eq!(noun, Noun::Cell(Rc::new(Noun::Atom(10)), Rc::new(Noun::Atom(20))));
     }
 }
